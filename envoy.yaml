@@ -1,0 +1,68 @@
+# cat /etc/envoy/envoy.yaml
+admin:
+  access_log_path: /tmp/admin_access.log
+  address:
+    socket_address:
+      protocol: TCP
+      address: 0.0.0.0
+      port_value: 9901
+static_resources:
+  listeners:
+  - name: listener_0
+    address:
+      socket_address:
+        protocol: TCP
+        address: 0.0.0.0
+        port_value: 10000
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains: ["*"]
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: my_custom_svc
+          http_filters:
+          - name: envoy.filters.http.wasm
+            typed_config:
+              "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+              type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+              value:
+                config:
+                  name: "my_plugin"
+                  root_id: "my_root_id"
+                  configuration:
+                    "@type": "type.googleapis.com/google.protobuf.StringValue"
+                    value: |
+                      {}
+                  vm_config:
+                    runtime: "envoy.wasm.runtime.v8"
+                    vm_id: "my_vm_id"
+                    code:
+                      local:
+                        filename: "/etc/envoy/optimized.wasm"
+                    configuration: { }
+          - name: envoy.filters.http.router
+            typed_config: { }
+  clusters:
+  - name: my_custom_svc
+    connect_timeout: 30s
+    type: static
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: service1
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 192.168.1.4
+                port_value: 8080
